@@ -1,0 +1,4 @@
+# Vendored rapidjson, header-only
+rapidjson/*
+!rapidjson/include/
+!rapidjson/license.txt
