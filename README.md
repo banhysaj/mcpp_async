@@ -1,7 +1,7 @@
 # mcpp_async
 
 The async version of [mcpp](https://github.com/banhysaj/mcpp.git). It is the same library, 
-the difference is that this build runs tool calls on a worker thread
+the difference is that this version runs tool calls on a worker thread
 pool instead of one at a time, and it supports request cancellation.
 
 If you're new to the project, read the base repo first and the core API (registering tools, `ToolResult`, arguments,
