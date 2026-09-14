@@ -76,7 +76,7 @@ can't be cancelled because there is no `RequestContext`.
 
 C++11 or later, plus the threading part of the standard library (`<thread>`,
 `<mutex>`, `<atomic>`, `<condition_variable>`). On GCC/Clang, link pthreads
-(`-pthread`); on MSVC nothing extra is needed. RapidJSON is the only other
+(`-pthread`) while on MSVC nothing extra is needed. RapidJSON is the only other
 dependency. Aside from the Windows binary-mode setup in the stdio transport (guarded
 by an `#ifdef`), the source builds on Windows, Linux, and macOS.
 
