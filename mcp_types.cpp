@@ -65,4 +65,23 @@ namespace mcpp_async {
 		r.content.push_back(Content::makeText(m));
 		return r;
 	}
+	ToolResult ToolResult::elicit(const Elicitation& e) {
+		ToolResult r;
+		r.elicitations.push_back(e);
+		return r;
+	}
+
+	Elicitation Elicitation::makeForm(const std::string& key, const std::string& message) {
+		Elicitation e;
+		e.key = key;
+		e.message = message;
+		return e;
+	}
+	Elicitation Elicitation::makeUrl(const std::string& key, const std::string& message, const std::string& url) {
+		Elicitation e;
+		e.key = key;
+		e.message = message;
+		e.url = url;
+		return e;
+	}
 }

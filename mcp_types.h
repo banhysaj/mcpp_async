@@ -14,6 +14,7 @@ namespace mcpp_async {
 		kMethodNotFound = -32601,
 		kInvalidParams = -32602,
 		kInternalError = -32603,
+		kMissingRequiredClientCapability = -32021,
 		kUnsupportedProtocolVersion = -32022
 	};
 
@@ -69,16 +70,53 @@ namespace mcpp_async {
 		}
 	};
 
+	struct Elicitation {
+		std::string key; // names the answer then the tool runs for the second time
+		std::string message;
+		std::string url; // for url mode
+		std::string schema; //raw json for the form, optional
+		vector<ToolParameter> fields; // flat primitives only, string num, int, bool, enums
+
+		static Elicitation makeForm(const std::string& key, const std::string& message);
+		static Elicitation makeUrl(const std::string& key, const std::string& message, const std::string& url);
+
+		bool isUrl() const { return !url.empty(); }
+		Elicitation& addField(const ToolParameter& param) {
+			fields.push_back(param);
+			return *this;
+		}
+		Elicitation& addField(const std::string& n, PropertyType t, const std::string& d, bool req = true) {
+			fields.push_back(ToolParameter(n, t, d, req));
+			return *this;
+		}
+		Elicitation& setSchema(const std::string& rawJson) {
+			schema = rawJson;
+			return *this;
+		}
+	};
+
 	struct ToolResult {
 		vector<Content> content;
 		bool isError;
 		std::string structuredContent;
 		bool hasStructuredContent;
+		vector<Elicitation> elicitations; // ask the user firstm the tool will run again with the answers
+		std::string requestState;
 
 		ToolResult() : isError(false), hasStructuredContent(false) {}
 
 		static ToolResult text(const std::string& t);   // A single text block
 		static ToolResult error(const std::string& message);
+		static ToolResult elicit(const Elicitation& e);
+		ToolResult& addElicitation(const Elicitation& e) {
+			elicitations.push_back(e);
+			return *this;
+		}
+		ToolResult& withRequestState(const std::string& state) {
+			requestState = state;
+			return *this;
+		}
+
 		ToolResult& add(const Content& c) {
 			content.push_back(c); return *this;
 		}
