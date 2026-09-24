@@ -158,11 +158,27 @@ namespace mcpp_async {
   const char* const fldTtlMs = "ttlMs";
   const char* const fldCacheScope = "cacheScope";
 
+  // elicitation
+  const char* const fldInputRequests = "inputRequests";
+  const char* const fldInputResponses = "inputResponses";
+  const char* const fldRequestState = "requestState";
+  const char* const fldElicitation = "elicitation";
+  const char* const fldForm = "form";
+  const char* const fldMode = "mode";
+  const char* const fldUrl = "url";
+  const char* const fldRequestedSchema = "requestedSchema";
+  const char* const fldAction = "action";
+  const char* const fldElicitationId = "elicitationId";
+  const char* const fldRequiredCapabilities = "requiredCapabilities";
 
 
   // Fixed string values
   const char* const kJsonRpcVersion = "2.0";
   const char* const kResultTypeComplete = "complete";
+  const char* const kResultTypeInputRequired = "input_required";
+  const char* const valModeForm = "form";
+  const char* const valModeUrl = "url";
+  const char* const valActionCancel = "cancel";
   const char* const valTypeText = "text";
   const char* const valTypeImage = "image";
   const char* const valTypeAudio = "audio";

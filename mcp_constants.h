@@ -141,11 +141,27 @@ namespace mcpp_async {
   extern const char* const fldTtlMs;
   extern const char* const fldCacheScope;
 
+  // elicitation
+  extern const char* const fldInputRequests;
+  extern const char* const fldInputResponses;
+  extern const char* const fldRequestState;
+  extern const char* const fldElicitation;
+  extern const char* const fldForm;
+  extern const char* const fldMode;
+  extern const char* const fldUrl;
+  extern const char* const fldRequestedSchema;
+  extern const char* const fldAction;
+  extern const char* const fldElicitationId;
+  extern const char* const fldRequiredCapabilities;
 
 
   // Fixed string values
   extern const char* const kJsonRpcVersion;
   extern const char* const kResultTypeComplete;
+  extern const char* const kResultTypeInputRequired;
+  extern const char* const valModeForm;
+  extern const char* const valModeUrl;
+  extern const char* const valActionCancel;
   extern const char* const valTypeText;
   extern const char* const valTypeImage;
   extern const char* const valTypeAudio;
