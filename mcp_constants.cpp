@@ -178,6 +178,8 @@ namespace mcpp_async {
   const char* const kResultTypeInputRequired = "input_required";
   const char* const valModeForm = "form";
   const char* const valModeUrl = "url";
+  const char* const valActionAccept = "accept";
+  const char* const valActionDecline = "decline";
   const char* const valActionCancel = "cancel";
   const char* const valTypeText = "text";
   const char* const valTypeImage = "image";

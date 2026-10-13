@@ -161,6 +161,8 @@ namespace mcpp_async {
   extern const char* const kResultTypeInputRequired;
   extern const char* const valModeForm;
   extern const char* const valModeUrl;
+  extern const char* const valActionAccept;
+  extern const char* const valActionDecline;
   extern const char* const valActionCancel;
   extern const char* const valTypeText;
   extern const char* const valTypeImage;

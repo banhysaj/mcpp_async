@@ -71,6 +71,13 @@ can't be cancelled because there is no `RequestContext`.
   `RequestContext`, so they can't observe cancellation.
 - **`run()` owns the threads.** Call it from one thread, don't run the same
   `Server` from several.
+- **Elicitation doesn't tie up a worker.** Asking the user something (see the
+  base repo) returns straight away, and the client's follow-up call can land on
+  any thread. Whatever the tool needs on the second run goes in
+  `withRequestState()`, not in a member.
+- **Request state is client input.** The client sends `requestState()` back and
+  can change it, so treat it like any other argument: don't put anything in it
+  the client mustn't alter, and re-check what matters on the second run.
 
 ## Build requirements
 

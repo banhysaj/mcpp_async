@@ -100,6 +100,42 @@ namespace mcpp_async {
             return 1;
         }
 
+        rj::Value propertySchema(const ToolParameter& p, Alloc& a) {
+            rj::Value pj(rj::kObjectType);
+            addStr(pj, fldType, propTypeName(p.type), a);
+            if (!p.description.empty()) {
+                addStr(pj, fldDescription, p.description, a);
+            }
+            if (p.type == PropertyType::Array && !p.itemType.empty()) {
+                rj::Value items(rj::kObjectType);
+                addStr(items, fldType, p.itemType, a);
+                addVal(pj, fldItems, items, a);
+            }
+            if (!p.enumValues.empty()) {
+                rj::Value e(rj::kArrayType);
+                for (size_t k = 0; k < p.enumValues.size(); ++k) pushStr(e, p.enumValues[k], a);
+                addVal(pj, fldEnum, e, a);
+            }
+            return pj;
+        }
+
+        rj::Value objectSchema(const vector<ToolParameter>& params, Alloc& a) {
+            rj::Value schema(rj::kObjectType);
+            addStr(schema, fldType, valSchemaObject, a);
+            rj::Value props(rj::kObjectType), required(rj::kArrayType);
+            for (size_t i = 0; i < params.size(); ++i) {
+                const ToolParameter& p = params[i];
+                rj::Value pj = propertySchema(p, a);
+                addKeyVal(props, p.name, pj, a);
+                if (p.required) {
+                    pushStr(required, p.name, a);
+                }
+            }
+            addVal(schema, fldProperties, props, a);
+            if (!required.Empty()) addVal(schema, fldRequired, required, a);
+            return schema;
+        }
+
         rj::Value toolValue(const Tool& t, Alloc& a) {
             rj::Value j(rj::kObjectType);
             addStr(j, fldName, t.name, a);
@@ -115,33 +151,7 @@ namespace mcpp_async {
                 addVal(j, fldInputSchema, schema, a);
             }
             else {
-                schema.SetObject();
-                addStr(schema, fldType, valSchemaObject, a);
-                rj::Value props(rj::kObjectType), required(rj::kArrayType);
-                for (size_t i = 0; i < t.properties.size(); ++i) {
-                    const ToolParameter& p = t.properties[i];
-                    rj::Value pj(rj::kObjectType);
-                    addStr(pj, fldType, propTypeName(p.type), a);
-                    if (!p.description.empty()) {
-                        addStr(pj, fldDescription, p.description, a);
-                    }
-                    if (p.type == PropertyType::Array && !p.itemType.empty()) {
-                        rj::Value items(rj::kObjectType);
-                        addStr(items, fldType, p.itemType, a);
-                        addVal(pj, fldItems, items, a);
-                    }
-                    if (!p.enumValues.empty()) {
-                        rj::Value e(rj::kArrayType);
-                        for (size_t k = 0; k < p.enumValues.size(); ++k) pushStr(e, p.enumValues[k], a);
-                        addVal(pj, fldEnum, e, a);
-                    }
-                    addKeyVal(props, p.name, pj, a);
-                    if (p.required) {
-                        pushStr(required, p.name, a);
-                    }
-                }
-                addVal(schema, fldProperties, props, a);
-                if (!required.Empty()) addVal(schema, fldRequired, required, a);
+                schema = objectSchema(t.properties, a);
                 addVal(j, fldInputSchema, schema, a);
             }
 
@@ -213,6 +223,63 @@ namespace mcpp_async {
                 }
             }
             return true;
+        }
+
+        bool elicitRequestValue(const Elicitation& e, rj::Value& req, std::string& err, Alloc& a) {
+            req.SetObject();
+            addStr(req, fldMethod, mtdElicitationCreate, a);
+
+            rj::Value p(rj::kObjectType);
+            addStr(p, fldMode, e.isUrl() ? valModeUrl : valModeForm, a);
+            addStr(p, fldMessage, e.message, a);
+            if (e.isUrl()) {
+                if (e.elicitationId.empty()) {
+                    err = "Elicitation '" + e.key + "' has no elicitationId";
+                    return false;
+                }
+                addStr(p, fldElicitationId, e.elicitationId, a);
+                addStr(p, fldUrl, e.url, a);
+            }
+            else {
+                rj::Value schema;
+                if (!e.schema.empty()) {
+                    if (!parseInto(e.schema, schema, a)) {
+                        err = "Elicitation '" + e.key + "' has a schema that is not valid JSON";
+                        return false;
+                    }
+                }
+                else {
+                    for (size_t i = 0; i < e.fields.size(); ++i) {
+                        PropertyType t = e.fields[i].type;
+                        if (t == PropertyType::Object || t == PropertyType::Array) {
+                            err = "Elicitation '" + e.key + "' field '" + e.fields[i].name + "' must be a string, number, integer or boolean";
+                            return false;
+                        }
+                    }
+                    schema = objectSchema(e.fields, a);
+                }
+                addVal(p, fldRequestedSchema, schema, a);
+            }
+            addVal(req, fldParams, p, a);
+            return true;
+        }
+
+        struct ElicitCaps {
+            bool form;
+            bool url;
+            ElicitCaps() : form(false), url(false) {}
+        };
+
+        ElicitCaps clientElicitCaps(const rj::Value& params) {
+            ElicitCaps c;
+            const rj::Value* meta = args::get(params, fldMeta);
+            const rj::Value* caps = meta ? args::get(*meta, kMetaClientCapabilities) : 0;
+            const rj::Value* el = caps ? args::get(*caps, fldElicitation) : 0;
+            if (!el || !el->IsObject()) return c;
+            if (el->ObjectEmpty()) { c.form = true; return c; }
+            c.form = args::has(*el, fldForm);
+            c.url = args::has(*el, fldUrl);
+            return c;
         }
     }
 
@@ -432,6 +499,29 @@ namespace mcpp_async {
         return cancel_ && cancel_->load();
     }
 
+    bool RequestContext::hasAnswer(const std::string& key) const {
+        return inputResponses_ && args::get(*inputResponses_, key.c_str()) != 0;
+    }
+
+    std::string RequestContext::answerAction(const std::string& key) const {
+        if (!inputResponses_) return std::string();
+        const rj::Value* r = args::get(*inputResponses_, key.c_str());
+        if (!r || !r->IsObject()) return std::string();
+        return args::str(*r, fldAction);
+    }
+
+    bool RequestContext::accepted(const std::string& key) const {
+        return answerAction(key) == valActionAccept;
+    }
+
+    const rj::Value* RequestContext::answerContent(const std::string& key) const {
+        if (!inputResponses_) return 0;
+        const rj::Value* r = args::get(*inputResponses_, key.c_str());
+        if (!r || !r->IsObject()) return 0;
+        const rj::Value* c = args::get(*r, fldContent);
+        return (c && c->IsObject()) ? c : 0;
+    }
+
     std::string Server::stripBomAndTrim(const std::string& line) {
         size_t b = 0;
         size_t e = line.size();
@@ -447,7 +537,7 @@ namespace mcpp_async {
         return line.substr(b, e - b);
     }
 
-    std::string Server::finalize(const rj::Value& id, const char* method, bool stateless, rj::Document& resultDoc) {
+    std::string Server::finalize(const rj::Value& id, const char* method, bool stateless, rj::Document& resultDoc, bool inputRequired) {
         rj::Document env;
         env.SetObject();
         Alloc& a = env.GetAllocator();
@@ -459,7 +549,7 @@ namespace mcpp_async {
         rj::Value result;
         result.CopyFrom(resultDoc, a);
         if (stateless) {
-            addStr(result, fldResultType, kResultTypeComplete, a);
+            addStr(result, fldResultType, inputRequired ? kResultTypeInputRequired : kResultTypeComplete, a);
             rj::Value meta(rj::kObjectType);
             rj::Value info;
             buildServerInfo(info, a);
@@ -640,6 +730,9 @@ namespace mcpp_async {
         const rj::Value* meta = args::get(params, fldMeta);
         const rj::Value* tok = meta ? args::get(*meta, fldProgressToken) : 0;
 
+        ElicitCaps caps = clientElicitCaps(params);
+        const rj::Value* answers = args::get(params, fldInputResponses);
+
         // invoke the handler (ctx or plain)
         ToolResult tr;
         try {
@@ -650,6 +743,10 @@ namespace mcpp_async {
                 ctx.stateless = stateless;
                 ctx.progressToken_ = tok;
                 ctx.hasProgressToken = (tok != 0);
+                ctx.inputResponses_ = (answers && answers->IsObject()) ? answers : 0;
+                ctx.requestState_ = args::str(params, fldRequestState);
+                ctx.elicitForm_ = caps.form;
+                ctx.elicitUrl_ = caps.url;
                 ctx.cancel_ = cancelFlagFor(serialize(id));  // null if the request has no id
                 tr = entry->handlerCtx ? entry->handlerCtx(toolArgs, ctx) : ToolResult::error("Tool has no handler");
             }
@@ -662,6 +759,41 @@ namespace mcpp_async {
         }
         catch (...) {
             tr = ToolResult::error("Tool error: unknown exception");
+        }
+
+        if (!tr.elicitations.empty()) {
+            if (!entry->ctx) {
+                return makeError(id, kInternalError,
+                    "Tool " + name + " asked for input but was added with addTool, not addToolCtx, so it can't read the answers");
+            }
+            if (!stateless) {
+                return makeError(id, kMissingRequiredClientCapability,
+                    std::string("Elicitation requires protocol version ") + kProtocolVersionLatest);
+            }
+            for (size_t i = 0; i < tr.elicitations.size(); ++i) {
+                const Elicitation& e = tr.elicitations[i];
+                if (e.isUrl() ? !caps.url : !caps.form) {
+                    return makeError(id, kMissingRequiredClientCapability,
+                        std::string("Client does not support ") + (e.isUrl() ? valModeUrl : valModeForm) + " mode elicitation");
+                }
+            }
+
+            rj::Document ir; ir.SetObject();
+            Alloc& ia = ir.GetAllocator();
+            rj::Value reqs(rj::kObjectType);
+            for (size_t i = 0; i < tr.elicitations.size(); ++i) {
+                rj::Value r;
+                std::string err;
+                if (!elicitRequestValue(tr.elicitations[i], r, err, ia)) {
+                    return makeError(id, kInternalError, err);
+                }
+                addKeyVal(reqs, tr.elicitations[i].key, r, ia);
+            }
+            addVal(ir, fldInputRequests, reqs, ia);
+            if (!tr.requestState.empty()) {
+                addStr(ir, fldRequestState, tr.requestState, ia);
+            }
+            return finalize(id, mtdToolsCall, stateless, ir, true);
         }
 
         rj::Document result; result.SetObject();

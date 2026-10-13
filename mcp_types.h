@@ -74,6 +74,7 @@ namespace mcpp_async {
 		std::string key; // names the answer then the tool runs for the second time
 		std::string message;
 		std::string url; // for url mode
+		std::string elicitationId;
 		std::string schema; //raw json for the form, optional
 		vector<ToolParameter> fields; // flat primitives only, string num, int, bool, enums
 

@@ -2,6 +2,7 @@
 
 #include "rapidjson/include/rapidjson/document.h"
 
+#include <random>
 #include <string>
 
 namespace rj = rapidjson;
@@ -82,6 +83,9 @@ namespace mcpp_async {
 		e.key = key;
 		e.message = message;
 		e.url = url;
+		std::random_device rd;
+		std::uniform_int_distribution<int> hex(0, 15);
+		for (int i = 0; i < 32; ++i) e.elicitationId += "0123456789abcdef"[hex(rd)];
 		return e;
 	}
 }
