@@ -17,6 +17,11 @@ namespace mcpp_async {
 		std::string header(const std::string& name) const;
 	};
 
+	struct Unavailable {
+		int retryAfterSeconds;
+		explicit Unavailable(int seconds = 5) : retryAfterSeconds(seconds) {}
+	};
+
 	struct HttpOptions {
 		std::string host;
 		int port;

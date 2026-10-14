@@ -219,7 +219,16 @@ namespace mcpp_async {
 
             RequestScope scope;
             std::string challenge;
-            if (opts.authorize && !opts.authorize(info, scope.principal, challenge)) {
+            bool allowed = true;
+            try {
+                allowed = !opts.authorize || opts.authorize(info, scope.principal, challenge);
+            }
+            catch (const Unavailable& u) {
+                res.set_header("Retry-After", std::to_string(u.retryAfterSeconds));
+                reply(res, 503, errorBody(kInternalError, "Service unavailable", 0));
+                return;
+            }
+            if (!allowed) {
                 res.status = 401;
                 if (!challenge.empty()) res.set_header("WWW-Authenticate", challenge);
                 return;

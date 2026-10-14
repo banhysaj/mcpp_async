@@ -133,7 +133,10 @@ What it does:
 - **Auth runs first.** `authorize` sees every request before anything is
   parsed. Return true to let it through, and whatever you put in `principal`
   reaches tools as `ctx.principal()`. Return false for a 401 with `challenge`
-  as the `WWW-Authenticate` header. Leave it unset for no auth, but then
+  as the `WWW-Authenticate` header. If you can't check right now, for example
+  because your token service is down, throw `mcpp_async::Unavailable(seconds)`
+  for a 503 with `Retry-After`, so clients wait instead of asking the user to
+  sign in again. Leave it unset for no auth, but then
   anyone who can reach the port can call every tool, so keep `host` at
   `127.0.0.1`.
 
