@@ -14,6 +14,7 @@ namespace mcpp_async {
 		kMethodNotFound = -32601,
 		kInvalidParams = -32602,
 		kInternalError = -32603,
+		kHeaderMismatch = -32020,
 		kMissingRequiredClientCapability = -32021,
 		kUnsupportedProtocolVersion = -32022
 	};

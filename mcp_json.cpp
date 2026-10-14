@@ -79,7 +79,25 @@ namespace mcpp_async {
             v.Accept(w);
             return std::string(sb.GetString(), sb.GetSize());
         }
+        bool withinDepth(const char* text, size_t len, int maxDepth) {
+            int depth = 0;
+            bool inString = false, escaped = false;
+            for (size_t i = 0; i < len; ++i) {
+                char c = text[i];
+                if (inString) {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == '"') inString = false;
+                }
+                else if (c == '"') inString = true;
+                else if (c == '[' || c == '{') { if (++depth > maxDepth) return false; }
+                else if (c == ']' || c == '}') --depth;
+            }
+            return true;
+        }
+
         bool parseInto(const std::string& raw, rj::Value& out, Alloc& a) {
+            if (!withinDepth(raw.c_str(), raw.size())) return false;
             rj::Document d;
             d.Parse(raw.c_str());
             if (d.HasParseError()) return false;

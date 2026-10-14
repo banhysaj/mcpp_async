@@ -329,7 +329,7 @@ namespace mcpp_async {
     Server::Incoming Server::preview(const std::string& line) const {
         Incoming in;
         std::string text = stripBomAndTrim(line);
-        if (text.empty()) return in;
+        if (text.empty() || !json::withinDepth(text.c_str(), text.size())) return in;
 
         rj::Document d;
         d.Parse(text.c_str(), text.size());
@@ -399,7 +399,13 @@ namespace mcpp_async {
         if (!message.empty()) {
             addStr(d, fldMessage, message, a);
         }
-        server_->sendNotificationDoc(ntfProgress, d);
+        send(ntfProgress, &d);
+    }
+
+    void RequestContext::send(const std::string& notification, const rj::Value* params) {
+        std::string line = Server::notificationLine(notification, params);
+        if (sink_) sink_(line);
+        else server_->sendLine(line);
     }
 
     void Server::addTool(const Tool& tool, ToolHandler handler) {
@@ -445,38 +451,39 @@ namespace mcpp_async {
         }
     }
 
-    void Server::sendNotification(const std::string& method, const std::string& rawJsonParams) {
+    std::string Server::notificationLine(const std::string& method, const rj::Value* params) {
         rj::Document env; env.SetObject();
         Alloc& a = env.GetAllocator();
         addStr(env, fldJsonrpc, kJsonRpcVersion, a);
         addStr(env, fldMethod, method, a);
-        if (!rawJsonParams.empty()) {
-            rj::Value p; if (parseInto(rawJsonParams, p, a)) {
-                env.AddMember(rj::StringRef(fldParams), p, a);
-            }
+        if (params) {
+            rj::Value p; p.CopyFrom(*params, a);
+            env.AddMember(rj::StringRef(fldParams), p, a);
         }
-        sendLine(serialize(env));
+        return serialize(env);
+    }
+
+    void Server::sendNotification(const std::string& method, const std::string& rawJsonParams) {
+        rj::Document p;
+        bool ok = !rawJsonParams.empty() && parseInto(rawJsonParams, p, p.GetAllocator());
+        sendLine(notificationLine(method, ok ? &p : 0));
     }
 
     void Server::sendNotificationDoc(const std::string & method, rj::Document& params) {
-        rj::Document env; env.SetObject();
-        Alloc& a = env.GetAllocator();
-        addStr(env, fldJsonrpc, kJsonRpcVersion, a);
-        addStr(env, fldMethod, method, a);
-        rj::Value p; p.CopyFrom(params, a);
-        env.AddMember(rj::StringRef(fldParams), p, a);
-        sendLine(serialize(env));
+        sendLine(notificationLine(method, &params));
     }
 
     void Server::notifyToolsListChanged() {
         sendNotification(ntfToolsListChanged, "{}");
     }
 
+    bool Server::logEnabled(const std::string& level) {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        return loggingLevel_.empty() || logRank(level) >= logRank(loggingLevel_);
+    }
+
     void Server::logMessage(const std::string& level, const std::string& message, const std::string& logger) {
-        {
-            std::lock_guard<std::mutex> lock(stateMutex_);
-            if (!loggingLevel_.empty() && logRank(level) < logRank(loggingLevel_)) return;
-        }
+        if (!logEnabled(level)) return;
         rj::Document d; d.SetObject();
         Alloc& a = d.GetAllocator();
         addStr(d, fldLevel, level, a);
@@ -488,11 +495,19 @@ namespace mcpp_async {
     }
 
     void RequestContext::log(const std::string& level, const std::string& message) {
-        if (server_) server_->logMessage(level, message);
+        if (!server_ || !server_->logEnabled(level)) return;
+        rj::Document d; d.SetObject();
+        Alloc& a = d.GetAllocator();
+        addStr(d, fldLevel, level, a);
+        addStr(d, fldData, message, a);
+        send(ntfMessage, &d);
     }
 
     void RequestContext::notify(const std::string& method, const std::string& rawJsonParams) {
-        if (server_) server_->sendNotification(method, rawJsonParams);
+        if (!server_) return;
+        rj::Document p;
+        bool ok = !rawJsonParams.empty() && parseInto(rawJsonParams, p, p.GetAllocator());
+        send(method, ok ? &p : 0);
     }
 
     bool RequestContext::cancelled() const {
@@ -578,7 +593,26 @@ namespace mcpp_async {
         return serialize(env);
     }
 
-    std::string Server::dispatchOne(const rj::Value& msg) {
+    std::string Server::unsupportedVersion(const rj::Value& id, const std::string& requested) {
+        rj::Document env; env.SetObject();
+        Alloc& a = env.GetAllocator();
+        addStr(env, fldJsonrpc, kJsonRpcVersion, a);
+        rj::Value idCopy; idCopy.CopyFrom(id, a);
+        env.AddMember(rj::StringRef(fldId), idCopy, a);
+        rj::Value data(rj::kObjectType), supported(rj::kArrayType);
+        std::vector<std::string> sv = supportedProtocolVersions();
+        for (size_t i = 0; i < sv.size(); ++i) pushStr(supported, sv[i], a);
+        addVal(data, fldSupported, supported, a);
+        addStr(data, fldRequested, requested, a);
+        rj::Value err(rj::kObjectType);
+        addInt(err, fldCode, kUnsupportedProtocolVersion, a);
+        addStr(err, fldMessage, "Unsupported protocol version", a);
+        addVal(err, fldData, data, a);
+        env.AddMember(rj::StringRef(fldError), err, a);
+        return serialize(env);
+    }
+
+    std::string Server::dispatchOne(const rj::Value& msg, const RequestScope* scope) {
         rj::Value nullId;
 
         if (!msg.IsObject()) {
@@ -602,6 +636,9 @@ namespace mcpp_async {
         const rj::Value* meta = args::get(params, fldMeta);
         const rj::Value* pv = meta ? args::get(*meta, kMetaProtocolVersion) : 0;
         bool stateless = (pv && pv->IsString());
+        if (stateless && idV && !isStatelessVersion(pv->GetString())) {
+            return unsupportedVersion(id, pv->GetString());
+        }
 
         // handshake, notifications, and ping are always allowed
         if (method == mtdInitialize)      return onInitialize(id, params);
@@ -621,7 +658,7 @@ namespace mcpp_async {
         }
 
         if (method == mtdToolsList)       return onToolsList(id, stateless);
-        if (method == mtdToolsCall)       return onToolsCall(id, stateless, params);
+        if (method == mtdToolsCall)       return onToolsCall(id, stateless, params, scope);
         if (method == mtdLoggingSetLevel) {
             {
                 std::lock_guard<std::mutex> lock(stateMutex_);
@@ -635,19 +672,28 @@ namespace mcpp_async {
     }
 
     std::string Server::handleLine(const std::string& line) {
+        return handle(line, 0);
+    }
+
+    std::string Server::handleMessage(const std::string& message, const RequestScope& scope) {
+        return handle(message, &scope);
+    }
+
+    std::string Server::handle(const std::string& line, const RequestScope* scope) {
         std::string text = stripBomAndTrim(line);
         if (text.empty()) return "";
 
+        rj::Value nullId;
+        if (!json::withinDepth(text.c_str(), text.size())) return makeError(nullId, kInvalidRequest, "Message is nested too deeply");
+
         rj::Document msg;
         msg.Parse(text.c_str(), text.size());
-
-        rj::Value nullId;
         if (msg.HasParseError()) return makeError(nullId, kParseError, "Parse error");
 
         if (msg.IsArray()) {
             std::string out;
             for (rj::SizeType i = 0; i < msg.Size(); ++i) {
-                std::string r = dispatchOne(msg[i]);
+                std::string r = dispatchOne(msg[i], scope);
                 if (r.empty()) continue;
                 out += out.empty() ? "[" : ","; //If there's at least one reply, open OR keep adding elements in the array, separated by ,
                 out += r;
@@ -655,7 +701,7 @@ namespace mcpp_async {
             if (!out.empty()) out += "]"; //close
             return out;
         }
-        return dispatchOne(msg);
+        return dispatchOne(msg, scope);
     }
 
     // initialize, echo the client's version if we support it.
@@ -706,7 +752,7 @@ namespace mcpp_async {
         return finalize(id, mtdToolsList, stateless, result);
     }
 
-    std::string Server::onToolsCall(const rj::Value& id, bool stateless, const rj::Value& params) {
+    std::string Server::onToolsCall(const rj::Value& id, bool stateless, const rj::Value& params, const RequestScope* scope) {
         std::string name = args::str(params, fldName);
         if (name.empty()) {
             return makeError(id, kInvalidParams, "Missing tool name");
@@ -747,7 +793,11 @@ namespace mcpp_async {
                 ctx.requestState_ = args::str(params, fldRequestState);
                 ctx.elicitForm_ = caps.form;
                 ctx.elicitUrl_ = caps.url;
-                ctx.cancel_ = cancelFlagFor(serialize(id));  // null if the request has no id
+                ctx.cancel_ = scope ? scope->cancel : cancelFlagFor(serialize(id));  // null if the request has no id
+                if (scope) {
+                    ctx.sink_ = scope->notify ? scope->notify : [](const std::string&) {};
+                    ctx.principal_ = scope->principal;
+                }
                 tr = entry->handlerCtx ? entry->handlerCtx(toolArgs, ctx) : ToolResult::error("Tool has no handler");
             }
             else {

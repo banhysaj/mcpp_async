@@ -35,5 +35,8 @@ namespace mcpp_async {
         void pushStr(rj::Value& arr, const std::string& s, Alloc& a);
         std::string serialize(const rj::Value& v);
         bool parseInto(const std::string& raw, rj::Value& out, Alloc& a);              // parse into a value owned by 'a'
+
+        const int kMaxDepth = 128;
+        bool withinDepth(const char* text, size_t len, int maxDepth = kMaxDepth);
     }
 }

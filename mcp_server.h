@@ -15,6 +15,12 @@ namespace mcpp_async {
 	class Transport;
 	typedef rapidjson::Document::AllocatorType Alloc;
 
+	struct RequestScope {
+		std::function<void(const std::string&)> notify;
+		std::shared_ptr<std::atomic<bool>> cancel;
+		std::string principal;
+	};
+
 	class RequestContext {
 	public:
 		std::string method; // the JSON-RPC method being handled
@@ -42,12 +48,17 @@ namespace mcpp_async {
 
 		const std::string& requestState() const { return requestState_; }
 
+		const std::string& principal() const { return principal_; }
+
 		Server* server() const { return server_; }
 
 	private:
 		friend class Server;
 		RequestContext() : stateless(false), hasProgressToken(false), server_(0), progressToken_(0), inputResponses_(0), elicitForm_(false), elicitUrl_(false) {}
+		void send(const std::string& notification, const rapidjson::Value* params);
 		Server* server_;
+		std::function<void(const std::string&)> sink_;
+		std::string principal_;
 		const rapidjson::Value* progressToken_; // valid only for the duration of the call
 		const rapidjson::Value* inputResponses_;
 		std::string requestState_;
@@ -92,6 +103,7 @@ namespace mcpp_async {
 			cacheScope_ = scope;
 		}
 		std::string handleLine(const std::string& line);
+		std::string handleMessage(const std::string& message, const RequestScope& scope);
 
 	private:
 		struct ToolEntry {
@@ -133,14 +145,18 @@ namespace mcpp_async {
 		const ToolEntry* findTool(const std::string& name) const;
 		void sendLine(const std::string& line);
 		void sendNotificationDoc(const std::string& method, rapidjson::Document& params);
+		static std::string notificationLine(const std::string& method, const rapidjson::Value* params);
+		bool logEnabled(const std::string& level);
 
-		std::string dispatchOne(const rapidjson::Value& msg);
+		std::string handle(const std::string& line, const RequestScope* scope);
+		std::string dispatchOne(const rapidjson::Value& msg, const RequestScope* scope);
+		std::string unsupportedVersion(const rapidjson::Value& id, const std::string& requested);
 		std::string finalize(const rapidjson::Value& id, const char* method, bool stateless, rapidjson::Document& resultDoc, bool inputRequired = false);
 		std::string makeError(const rapidjson::Value& id, int code, const std::string& message);
 
 		std::string onInitialize(const rapidjson::Value& id, const rapidjson::Value& params);
 		std::string onDiscover(const rapidjson::Value& id);
 		std::string onToolsList(const rapidjson::Value& id, bool stateless);
-		std::string onToolsCall(const rapidjson::Value& id, bool stateless, const rapidjson::Value& params);
+		std::string onToolsCall(const rapidjson::Value& id, bool stateless, const rapidjson::Value& params, const RequestScope* scope);
 	};
 }
