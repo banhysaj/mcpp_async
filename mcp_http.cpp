@@ -191,10 +191,17 @@ namespace mcpp_async {
     struct HttpServer::Impl {
         Server& server;
         HttpOptions opts;
-        httplib::Server http;
+        std::unique_ptr<httplib::Server> http;
         int boundPort;
 
-        Impl(Server& s, const HttpOptions& o) : server(s), opts(o), boundPort(-1) {}
+        Impl(Server& s, const HttpOptions& o) : server(s), opts(o), http(makeServer(o)), boundPort(-1) {}
+
+        static httplib::Server* makeServer(const HttpOptions& o) {
+#ifdef CPPHTTPLIB_SSL_ENABLED
+            if (!o.certFile.empty()) return new httplib::SSLServer(o.certFile.c_str(), o.keyFile.c_str());
+#endif
+            return new httplib::Server();
+        }
 
         bool originAllowed(const std::string& origin) const {
             if (opts.allowedOrigins.empty()) return isLocalOrigin(origin);
@@ -294,30 +301,40 @@ namespace mcpp_async {
 
     HttpServer::HttpServer(Server& server, const HttpOptions& options) : impl_(new Impl(server, options)) {
         Impl* impl = impl_.get();
-        impl->http.set_payload_max_length(options.maxBodyBytes);
+        impl->http->set_payload_max_length(options.maxBodyBytes);
         if (options.threads > 0) {
             size_t n = (size_t)options.threads;
-            impl->http.new_task_queue = [n] { return new httplib::ThreadPool(n); };
+            impl->http->new_task_queue = [n] { return new httplib::ThreadPool(n); };
         }
-        impl->http.Post(options.path, [impl](const httplib::Request& req, httplib::Response& res) {
+        impl->http->Post(options.path, [impl](const httplib::Request& req, httplib::Response& res) {
             impl->onPost(req, res);
         });
         httplib::Server::Handler notAllowed = [](const httplib::Request&, httplib::Response& res) {
             res.status = 405;
             res.set_header("Allow", "POST");
         };
-        impl->http.Get(options.path, notAllowed);
-        impl->http.Delete(options.path, notAllowed);
+        impl->http->Get(options.path, notAllowed);
+        impl->http->Delete(options.path, notAllowed);
     }
 
     HttpServer::~HttpServer() { stop(); }
 
+    bool HttpServer::supportsTls() {
+#ifdef CPPHTTPLIB_SSL_ENABLED
+        return true;
+#else
+        return false;
+#endif
+    }
+
     bool HttpServer::bind() {
         if (impl_->boundPort > 0) return true;
+        // a cert that wouldn't load, or one asked for in a build without TLS, never falls back to plain HTTP
+        if (!impl_->opts.certFile.empty() && (!supportsTls() || !impl_->http->is_valid())) return false;
         if (impl_->opts.port == 0) {
-            impl_->boundPort = impl_->http.bind_to_any_port(impl_->opts.host);
+            impl_->boundPort = impl_->http->bind_to_any_port(impl_->opts.host);
         }
-        else if (impl_->http.bind_to_port(impl_->opts.host, impl_->opts.port)) {
+        else if (impl_->http->bind_to_port(impl_->opts.host, impl_->opts.port)) {
             impl_->boundPort = impl_->opts.port;
         }
         return impl_->boundPort > 0;
@@ -327,11 +344,11 @@ namespace mcpp_async {
 
     bool HttpServer::listen() {
         if (!bind()) return false;
-        return impl_->http.listen_after_bind();
+        return impl_->http->listen_after_bind();
     }
 
     void HttpServer::stop() {
-        if (impl_->http.is_running()) impl_->http.stop();
+        if (impl_->http->is_running()) impl_->http->stop();
     }
 
 }

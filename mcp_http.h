@@ -31,6 +31,9 @@ namespace mcpp_async {
 		int threads;
 		int keepAliveSeconds;
 		std::function<bool(const HttpRequest& req, std::string& principal, std::string& challenge)> authorize;
+		// PEM files; set both to serve HTTPS (needs a build with CPPHTTPLIB_OPENSSL_SUPPORT)
+		std::string certFile;
+		std::string keyFile;
 
 		HttpOptions() : host("127.0.0.1"), port(8080), path("/mcp"), maxBodyBytes(4 * 1024 * 1024), threads(0), keepAliveSeconds(15) {}
 	};
@@ -44,6 +47,9 @@ namespace mcpp_async {
 		int port() const;
 		bool listen();
 		void stop();
+
+		// True when built with TLS, so certFile/keyFile can be used
+		static bool supportsTls();
 
 	private:
 		HttpServer(const HttpServer&);
