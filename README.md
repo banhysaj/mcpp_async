@@ -142,7 +142,11 @@ What it does:
 
 Limits:
 
-- **No TLS.** Put a reverse proxy (Caddy, nginx) in front for HTTPS.
+- **TLS needs OpenSSL 3.** Set `opts.certFile` and `opts.keyFile` (PEM) and
+  build with `CPPHTTPLIB_OPENSSL_SUPPORT` defined, linking OpenSSL, to serve
+  HTTPS. `HttpServer::supportsTls()` says whether the build has it. If the cert
+  or key won't load, or the build has no TLS, `bind()` fails rather than
+  falling back to plain HTTP.
 - **No server-wide notifications.** `sendNotification` and
   `notifyToolsListChanged` reach stdio clients only, and `subscriptions/listen`
   isn't implemented.
@@ -158,7 +162,7 @@ C++11 or later, plus the threading part of the standard library (`<thread>`,
 `<mutex>`, `<atomic>`, `<condition_variable>`). On GCC/Clang, link pthreads
 (`-pthread`) while on MSVC nothing extra is needed. RapidJSON is the only other
 dependency for stdio. HTTP adds cpp-httplib (vendored in `httplib/`) and, on
-Windows, `ws2_32.lib`. Aside from the Windows binary-mode setup in the stdio
+Windows, `ws2_32.lib`. HTTPS adds OpenSSL 3 (`libssl` and `libcrypto`). Aside from the Windows binary-mode setup in the stdio
 transport (guarded by an `#ifdef`), the source builds on Windows, Linux, and macOS.
 
 ## License
